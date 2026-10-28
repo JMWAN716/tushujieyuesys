@@ -1,7 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router'
+﻿import { createRouter, createWebHistory } from 'vue-router'
+import { useUserStore } from '../stores/user'
 
 // 路由懒加载：() => import(...)，访问到该路由时才动态加载对应组件，减少首屏体积
-// 传入 v => v.default 是为了把命名导出 default 解出来
 const routes = [
   // 登录页：无需 requiresAuth，放最外层，独占一整页
   {
@@ -51,16 +51,16 @@ const router = createRouter({
 
 // 全局前置守卫：每次路由跳转前都会执行
 router.beforeEach((to, from, next) => {
-  // 从 localStorage 读取 token，判断是否已登录
-  const token = localStorage.getItem('library_token')
+  // 读取 user store 判断是否已登录（内部由 token 派生）
+  const userStore = useUserStore()
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth)
 
-  // 目标页面需要登录但没有 token → 去登录页
-  if (requiresAuth && !token) {
+  // 目标页面需要登录但未登录 → 去登录页
+  if (requiresAuth && !userStore.isLoggedIn) {
     next({ path: '/login' })
   } else {
     // 已登录用户访问登录页 → 直接进主页（可选优化，避免反复登录）
-    if (to.path === '/login' && token) {
+    if (to.path === '/login' && userStore.isLoggedIn) {
       next({ path: '/' })
     } else {
       next()
