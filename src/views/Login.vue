@@ -1,17 +1,28 @@
 ﻿<script setup>
-// 登录页：输入用户名 → 调用 user store 登录 → 跳转图书列表
+// 登录页：输入用户名 → 调用 auth 登录接口 → 写入 user store → 跳转图书列表
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { login } from '../api/auth'
 import { useUserStore } from '../stores/user'
 
 const username = ref('')
+const loading = ref(false)
 const router = useRouter()
 const userStore = useUserStore()
 
-function handleLogin() {
+async function handleLogin() {
   if (!username.value.trim()) return
-  userStore.login(username.value)
-  router.push('/')
+  loading.value = true
+  try {
+    // 调用登录接口，成功后返回 { token, user }
+    const res = await login(username.value)
+    // 把接口返回的 token 和用户信息写入 user store（持久化后刷新不丢失）
+    userStore.token = res.token
+    userStore.userInfo = res.user
+    router.push('/')
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -26,11 +37,14 @@ function handleLogin() {
         <input
           v-model="username"
           placeholder="请输入用户名"
+          :disabled="loading"
           @keyup.enter="handleLogin"
         />
       </div>
 
-      <button class="btn btn-primary login-btn" @click="handleLogin">登录</button>
+      <button class="btn btn-primary login-btn" :disabled="loading" @click="handleLogin">
+        {{ loading ? '登录中...' : '登录' }}
+      </button>
       <p class="tip">模拟登录：输入任意用户名即可进入</p>
     </div>
   </div>
