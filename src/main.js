@@ -2,13 +2,15 @@
 import { createPinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import './style.css'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
 
 // ===== mock 总开关 =====
 // true  ：启用 MSW mock（开发环境拦截 /api/* 返回模拟数据）
 // false ：关闭 mock，并注销已注册的 Service Worker，请求落到真实后端
-const USE_MOCK = false
+const USE_MOCK = true
 
 // 启动时按开关决定是否启用 MSW
 if (USE_MOCK && import.meta.env.DEV) {
@@ -27,4 +29,8 @@ if (USE_MOCK && import.meta.env.DEV) {
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 
-createApp(App).use(pinia).use(router).mount('#app')
+const app = createApp(App)
+app.use(ElementPlus) // 全局注册 Element Plus
+app.use(pinia)
+app.use(router)
+app.mount('#app')

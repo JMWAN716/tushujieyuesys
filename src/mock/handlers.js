@@ -37,11 +37,23 @@ export const handlers = [
     const blocked = auth(request) // 需要登录才能查看
     if (blocked) return blocked
     const url = new URL(request.url)
+    // 读取分页与搜索参数，pageSize 沿用默认值
     const page = Number(url.searchParams.get('page') || 1)
-    const totalPages = Math.ceil(books.length / pageSize)
-    // page 大于总页数时模拟空数据
-    const list = page > totalPages ? [] : books.slice((page - 1) * pageSize, page * pageSize)
-    return ok({ list, page, pageSize, total: books.length })
+    const size = Number(url.searchParams.get('pageSize') || pageSize)
+    const keyword = (url.searchParams.get('keyword') || '').trim()
+    // 按 keyword 过滤（书名或作者包含关键词）
+    let filtered = books
+    if (keyword) {
+      filtered = books.filter(
+        (b) => b.title.includes(keyword) || b.author.includes(keyword)
+      )
+    }
+    // 计算过滤后的总条数与总页数
+    const total = filtered.length
+    const totalPages = Math.ceil(total / size)
+    // 切片返回当前页数据；越界时返回空数组
+    const list = page > totalPages ? [] : filtered.slice((page - 1) * size, page * size)
+    return ok({ list, page, pageSize: size, total })
   }),
 
   // 3）新增图书

@@ -1,134 +1,189 @@
 ﻿<script setup>
-// 图书列表页：分页展示 + 新增/编辑弹窗 + 删除，操作后刷新列表
-import { ref, onMounted } from 'vue'
+// 图书列表页：搜索 + 分页 + el-table + 新增/编辑/删除
+import { ref, onMounted, nextTick } from 'vue'
 import { getBooks, addBook, updateBook, deleteBook } from '../api/book'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import MyPagination from '../components/MyPagination.vue'
 
-const books = ref([])
-const loading = ref(true)
-const listTotal = ref(0)
+// 阴影演示数据（Element Plus 内置 box-shadow CSS 变量）
+const shadowGroup = ref([
+  { name: 'Basic Shadow', type: '' },
+  { name: 'Light Shadow', type: 'light' },
+  { name: 'Lighter Shadow', type: 'lighter' },
+  { name: 'Dark Shadow', type: 'dark' },
+])
 
-// 弹窗状态
-const dialogVisible = ref(false) // 是否显示弹窗
-const editingId = ref(null) // 编辑的图书 id，null 表示新增
-const form = ref({ title: '', author: '', price: 0 }) // 表单数据
-const saving = ref(false) // 保存中标记
+// 根据类型生成变量名，如 '' -> --el-box-shadow，'light' -> --el-box-shadow-light
+function getCssVarName(type) {
+  return `--el-box-shadow${type ? '-' : ''}${type}`
+}
 
-// 拉取第一页
+const books = ref([])      // 图书数据
+const loading = ref(true)  // 表格加载状态
+const listTotal = ref(0)   // 总数
+
+// 分页与搜索状态
+const page = ref(1)      // 当前页
+const pageSize = ref(10) // 每页条数
+const keyword = ref('')  // 搜索关键词
+
+// 弹窗与表单状态
+const dialogVisible = ref(false)
+const editingId = ref(null)
+const formRef = ref(null)
+const form = ref({ title: '', author: '', rating: 5, available: true, stock: 0 })
+
+// 校验规则：书名、作者必填
+const rules = {
+  title: [{ required: true, message: '请输入书名', trigger: 'blur' }],
+  author: [{ required: true, message: '请输入作者', trigger: 'blur' }],
+}
+
+// 拉取列表：携带 page/pageSize/keyword 请求
 async function fetchBooks() {
   loading.value = true
   try {
-    const res = await getBooks(1) // 返回 { list, page, pageSize, total }
+    const res = await getBooks({ page: page.value, pageSize: pageSize.value, keyword: keyword.value })
     books.value = res.list
     listTotal.value = res.total
   } finally {
     loading.value = false
   }
 }
-onMounted(fetchBooks)
 
-// 打开新增弹窗：清空表单
-function openAdd() {
-  editingId.value = null
-  form.value = { title: '', author: '', price: 0 }
-  dialogVisible.value = true
-}
-
-// 打开编辑弹窗：回填选中行数据
-function openEdit(book) {
-  editingId.value = book.id
-  form.value = { title: book.title, author: book.author, price: book.price }
-  dialogVisible.value = true
-}
-
-// 保存：根据 editingId 判断新增或编辑，成功后刷新
-async function handleSave() {
-  if (!form.value.title || !form.value.author) return
-  saving.value = true
-  try {
-    if (editingId.value) {
-      await updateBook(editingId.value, form.value) // 编辑
-    } else {
-      await addBook(form.value) // 新增
-    }
-    dialogVisible.value = false
-    fetchBooks() // 操作后刷新列表
-  } finally {
-    saving.value = false
-  }
-}
-
-// 删除：确认后调用接口再刷新
-async function handleDelete(id) {
-  if (!confirm('确定删除这本书吗？')) return
-  await deleteBook(id)
+// 搜索：关键词改变后回到第 1 页再请求
+function handleSearch() {
+  page.value = 1
   fetchBooks()
 }
 
-// 测试 500：调用 /api/error，由响应拦截器统一弹 toast 错误提示
-async function testError() {
-    const req = (await import('../utils/request')).default
-    await req.get('/error') // baseURL 已是 /api，勿重复前缀，实际请求 /api/error
+
+onMounted(fetchBooks)
+
+// 打开新增：清空表单
+function openAdd() {
+  editingId.value = null
+  form.value = { title: '', author: '', rating: 5, available: true, stock: 0 }
+  dialogVisible.value = true
+  nextTick(() => formRef.value?.clearValidate())
+}
+
+// 打开编辑：回填当前行
+function openEdit(book) {
+  editingId.value = book.id
+  form.value = { title: book.title, author: book.author, rating: book.rating ?? 5, available: book.available ?? true, stock: book.stock ?? 0 }
+  dialogVisible.value = true
+  nextTick(() => formRef.value?.clearValidate())
+}
+
+// 保存：validate 通过后按新增/编辑调用接口
+async function handleSave() {
+  try {
+    await formRef.value.validate()
+  } catch (err) {
+    // 校验未通过：明确提示，不再静默
+    ElMessage.warning(err?.message || '请正确填写表单信息')
+    return
+  }
+  if (editingId.value) await updateBook(editingId.value, form.value)
+  else await addBook(form.value)
+  ElMessage.success('保存成功') // 确认走到了提交这一步
+  dialogVisible.value = false
+  fetchBooks()
+}
+
+// 删除：ElMessageBox 二次确认
+async function handleDelete(id) {
+  try {
+    await ElMessageBox.confirm('确定删除这本书吗？删除后不可恢复。', '删除确认', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return // 用户取消
+  }
+  await deleteBook(id)
+  fetchBooks()
 }
 </script>
 
 <template>
   <div>
     <div class="page-head">
-      <div>
-        <h2>图书列表</h2>
-        <p class="page-desc">共 {{ listTotal }} 本图书</p>
+      <h2>图书列表</h2>
+
+      <!-- 搜索框 + 新增按钮 -->
+      <div class="head-tools">
+        <el-input
+          v-model="keyword"
+          placeholder="搜索书名 / 作者"
+          clearable
+          style="width: 240px"
+          @keyup.enter="handleSearch"
+          @clear="handleSearch"
+        />
+        <el-button type="primary" @click="handleSearch">搜索</el-button>
+        <el-button type="primary" @click="openAdd">新增图书</el-button>
       </div>
-      <button class="btn btn-primary" @click="openAdd">新增图书</button> <button class="btn" @click="testError">测试 500</button>
     </div>
 
-    <!-- 加载中 -->
-    <div v-if="loading" class="state">加载中...</div>
+    <!-- el-table 展示，v-loading 绑定加载态，空数据走 el-empty -->
+    <el-table :data="books" v-loading="loading" stripe>
+      <el-table-column prop="title" label="书名" min-width="240" />
+      <el-table-column prop="author" label="作者" min-width="200" />
+      <el-table-column label="操作" width="160" fixed="right">
+        <template #default="{ row }">
+          <el-button size="small" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button size="small" link type="danger" @click="handleDelete(row.id)">删除</el-button>
+        </template>
+      </el-table-column>
+      <template #empty>
+        <el-empty description="暂无数据" />
+      </template>
+    </el-table>
 
-    <!-- 空数据提示 -->
-    <div v-else-if="books.length === 0" class="state">暂无图书</div>
+    <!-- 分页组件 -->
+    <div class="pagination">
+      <MyPagination v-model:page="page" v-model:pageSize="pageSize" :total="listTotal" @change="fetchBooks" />
+    </div>
 
-    <!-- 图书卡片网格 -->
-    <div v-else class="book-grid">
-      <article class="book-card" v-for="book in books" :key="book.id">
-        <div class="book-cover">{{ book.title.slice(0, 1) }}</div>
-        <div class="book-info">
-          <h3 class="book-title">{{ book.title }}</h3>
-          <p class="book-author">{{ book.author }}</p>
-          <div class="book-meta">
-            <span class="stock">¥ {{ book.price }}</span>
-            <div class="actions">
-              <button class="link-btn" @click="openEdit(book)">编辑</button>
-              <button class="link-btn danger" @click="handleDelete(book.id)">删除</button>
-            </div>
-          </div>
+    <!-- 阴影演示（Element Plus Box Shadow，原生 CSS 落地） -->
+    <div class="shadow-demo">
+      <h3>阴影演示</h3>
+      <div class="shadow-row">
+        <div v-for="(shadow, i) in shadowGroup" :key="i" class="shadow-item">
+          <div class="shadow-box" :style="{ boxShadow: `var(${getCssVarName(shadow.type)})` }" />
+          <span class="shadow-name">{{ shadow.name }}</span>
+          <code class="shadow-code">{{ getCssVarName(shadow.type) }}</code>
         </div>
-      </article>
+      </div>
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <div v-if="dialogVisible" class="overlay" @click.self="dialogVisible = false">
-      <div class="dialog">
-        <h3 class="dialog-title">{{ editingId ? '编辑图书' : '新增图书' }}</h3>
-        <div class="dialog-field">
-          <label>书名</label>
-          <input v-model="form.title" placeholder="请输入书名" />
-        </div>
-        <div class="dialog-field">
-          <label>作者</label>
-          <input v-model="form.author" placeholder="请输入作者" />
-        </div>
-        <div class="dialog-field">
-          <label>价格</label>
-          <input v-model.number="form.price" type="number" placeholder="请输入价格" />
-        </div>
-        <div class="dialog-actions">
-          <button class="btn" @click="dialogVisible = false">取消</button>
-          <button class="btn btn-primary" :disabled="saving" @click="handleSave">
-            {{ saving ? '保存中...' : '保存' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑图书' : '新增图书'" width="420px">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="50px">
+        <el-form-item label="书名" prop="title">
+          <el-input v-model="form.title" placeholder="请输入书名" />
+        </el-form-item>
+        <el-form-item label="作者" prop="author">
+          <el-input v-model="form.author" placeholder="请输入作者" />
+        </el-form-item>
+        <el-form-item label="评分">
+          <el-rate v-model="form.rating" :max="5" show-score />
+        </el-form-item>
+        <el-form-item label="可借">
+          <el-switch v-model="form.available" active-text="可借" inactive-text="不可借" />
+        </el-form-item>
+        <el-form-item label="库存">
+          <el-input-number v-model="form.stock" :min="0" :max="999" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -137,111 +192,52 @@ async function testError() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
-.page-desc { margin: 4px 0 0; color: var(--text-light); font-size: 14px; }
-
-.state {
-  padding: 48px 0;
-  text-align: center;
-  color: var(--text-light);
-  font-size: 14px;
-}
-
-.book-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-.book-card {
-  display: flex;
-  gap: 16px;
-  padding: 20px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  transition: transform 0.25s, box-shadow 0.25s;
-}
-.book-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
-}
-.book-cover {
-  width: 56px;
-  height: 72px;
-  flex-shrink: 0;
+.head-tools {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 26px;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #409eff, #2b6dc7);
-  border-radius: 8px;
+  gap: 10px;
 }
-.book-info { display: flex; flex-direction: column; flex: 1; }
-.book-title { margin: 0 0 6px; font-size: 16px; }
-.book-author { margin: 0 0 12px; color: var(--text-light); font-size: 14px; }
-.book-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: auto;
-}
-.stock { font-weight: 600; color: var(--primary); }
-.actions { display: flex; gap: 10px; }
-.link-btn {
-  border: none;
-  background: none;
-  color: var(--primary);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 0;
-}
-.link-btn.danger { color: #f56c6c; }
-
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.dialog {
-  width: 400px;
-  padding: 28px;
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
-}
-.dialog-title { margin: 0 0 20px; font-size: 18px; }
-.dialog-field { margin-bottom: 16px; }
-.dialog-field label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 13px;
-  color: var(--text-light);
-}
-.dialog-field input {
-  width: 100%;
-  padding: 10px 12px;
-  font-size: 14px;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  outline: none;
-}
-.dialog-field input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.15);
-}
-.dialog-actions {
+.pagination {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid #f0f0f0;
+  margin-top: 16px;
+}
+
+/* 阴影演示样式（原 UnoCSS 类的原生 CSS 等价实现） */
+.shadow-demo {
+  margin-top: 32px;
+}
+.shadow-demo h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.shadow-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.shadow-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  margin: auto;
+  width: 184px; /* 对应 w="46"（46*4） */
+}
+.shadow-box {
+  width: 120px; /* 对应 h="30" 宽 30*4 */
+  height: 120px; /* 对应 h="30" 高 30*4 */
+  margin: 8px;
+}
+.shadow-name {
+  padding: 16px 0; /* 对应 p="y-4" */
+  font-size: 14px; /* 对应 text="sm" */
+}
+.shadow-code {
+  font-size: 12px; /* 对应 text="xs" */
 }
 </style>
