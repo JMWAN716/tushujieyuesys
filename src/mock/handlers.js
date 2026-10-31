@@ -23,7 +23,7 @@ function auth(request) {
 
 export const handlers = [
   // 1）登录：返回 token 和用户信息
-  http.post('/api/login', async ({ request }) => {
+  http.post('*/api/login', async ({ request }) => {
     const { username, password } = await request.json()
     // 校验通过则返回 token 与用户信息
     return ok({
@@ -33,7 +33,7 @@ export const handlers = [
   }),
 
   // 2 & 6）分页图书列表：page 超出范围时返回空数据
-  http.get('/api/books', ({ request }) => {
+  http.get('*/api/books', ({ request }) => {
     const blocked = auth(request) // 需要登录才能查看
     if (blocked) return blocked
     const url = new URL(request.url)
@@ -57,7 +57,7 @@ export const handlers = [
   }),
 
   // 3）新增图书
-  http.post('/api/books', async ({ request }) => {
+  http.post('*/api/books', async ({ request }) => {
     const blocked = auth(request)
     if (blocked) return blocked
     const book = await request.json()
@@ -67,7 +67,7 @@ export const handlers = [
   }),
 
   // 4）编辑图书
-  http.put('/api/books/:id', async ({ request, params }) => {
+  http.put('*/api/books/:id', async ({ request, params }) => {
     const blocked = auth(request)
     if (blocked) return blocked
     const data = await request.json()
@@ -79,7 +79,7 @@ export const handlers = [
   }),
 
   // 5）删除图书
-  http.delete('/api/books/:id', ({ request, params }) => {
+  http.delete('*/api/books/:id', ({ request, params }) => {
     const blocked = auth(request)
     if (blocked) return blocked
     const id = Number(params.id)
@@ -88,7 +88,7 @@ export const handlers = [
   }),
 
   // 7）测试接口：模拟服务器 500 错误，观察响应拦截器
-  http.get('/api/error', () => {
+  http.get('*/api/error', () => {
     return HttpResponse.json(
       { code: 500, message: '服务器开小差了' },
       { status: 500 }
@@ -96,9 +96,16 @@ export const handlers = [
   }),
 
   // 8）测试接口：依赖 Authorization 的接口（观察 401 分支）
-  http.get('/api/secure', ({ request }) => {
+  http.get('*/api/secure', ({ request }) => {
     const blocked = auth(request)
     if (blocked) return blocked
     return ok({ secret: '你已通过鉴权看得到这段密文' })
+  }),
+
+  // 9）受保护接口：组合实验（登录 → 存 token → 带 Authorization 访问）
+  http.get('*/api/protected', ({ request }) => {
+    const blocked = auth(request)
+    if (blocked) return blocked
+    return ok({ message: '你已通过鉴权访问到受保护数据' })
   }),
 ]
